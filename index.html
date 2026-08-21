@@ -907,6 +907,7 @@
         // retratos encolhem e ficam centralizados na mesma caixa dos paisagens.
         // Precisa rodar de novo a cada troca de contexto, porque a largura da caixa
         // muda entre a tela e o modo PDF (coluna de 616px no A4).
+        const ESCALA_DO_CANVAS = 2;
         const FOTO_ALTURA_MAX = 340;   // ~90mm no A4
 
         function ajustarFoto(img) {
@@ -1018,6 +1019,42 @@
             });
         }
 
+        // O html2pdf usa DUAS alturas de pagina diferentes, e elas nao batem:
+        //   regra de quebra  -> pageSize.inner.px.height            = 941,06 px
+        //   fatiamento real  -> floor(canvas.largura * H/L) / escala = 942,00 px
+        // Um pixel de deriva por pagina. Na setima pagina ja sao 7 px, na decima
+        // 10 px - o bastante para o corte cair dentro do chapeu. O bloco e empurrado
+        // para onde a regra ACHA que a pagina comeca, mas a fatia cai depois, e os
+        // primeiros pixels do bloco ficam no pe da pagina anterior.
+        //
+        // A quebra do html2pdf fica desligada (pagebreak.mode = []) e e refeita aqui
+        // com a MESMA altura que o fatiamento vai usar.
+        function alinharQuebras(container, pageSize) {
+            // Largura inteira: sem isso o html2canvas arredonda 680,31 para 681 e a
+            // altura da fatia deixa de ser previsivel.
+            const largura = Math.floor(container.getBoundingClientRect().width);
+            container.style.width = largura + 'px';
+
+            const larguraCanvas = largura * ESCALA_DO_CANVAS;
+            const alturaPagina = Math.floor(
+                larguraCanvas * (pageSize.inner.height / pageSize.inner.width)) / ESCALA_DO_CANVAS;
+
+            const base = container.getBoundingClientRect().top;
+            // Ordem do documento: o bloco da materia e avaliado antes dos seus
+            // proprios paragrafos, entao um empurrao do bloco ja reposiciona o resto.
+            container.querySelectorAll('.pdf-keep, img, p, li').forEach(el => {
+                const r = el.getBoundingClientRect();
+                const topo = r.top - base, fundo = r.bottom - base;
+                if (fundo - topo > alturaPagina) return;          // nao cabe: nada a fazer
+                if (Math.floor(topo / alturaPagina) === Math.floor((fundo - 0.5) / alturaPagina)) return;
+                const espacador = document.createElement('div');
+                espacador.style.cssText =
+                    'display:block;height:' + (alturaPagina - (topo % alturaPagina)) + 'px';
+                el.parentNode.insertBefore(espacador, el);
+            });
+            return alturaPagina;
+        }
+
         // --- EXPORTAÇÃO ---
         function exportToPDF() {
             const btn = document.getElementById('btn-export');
@@ -1065,7 +1102,7 @@
                         filename:     `Informe_Executivo_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`,
                         image:        { type: 'jpeg', quality: 0.98 },
                         html2canvas:  { 
-                            scale: 2, 
+                            scale: ESCALA_DO_CANVAS,
                             useCORS: true, 
                             scrollY: 0, 
                             scrollX: 0,
@@ -1079,18 +1116,16 @@
                             letterRendering: true 
                         },
                         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                        // O html2pdf fatia o canvas numa linha de pixel arbitraria: sem
-                        // proteger o paragrafo, o corte cai NO MEIO de uma linha de texto -
-                        // o topo dos caracteres fica no pe de uma pagina e a base no topo da
-                        // seguinte. Incluir 'p' e 'li' empurra o paragrafo inteiro.
-                        // Medido: elimina o corte sem custo - mesmo numero de paginas e
-                        // aproveitamento igual ou melhor (89,2% -> 91,1% no caso de teste).
-                        // 'avoid-all' NAO serve aqui: marca todo elemento como inquebravel,
-                        // inclusive spans e icones, e desperdica paginas inteiras.
-                        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.pdf-keep', 'img', 'p', 'li'], before: [], after: [] }
+                        // Quebra desligada de proposito: a do html2pdf calcula com uma
+                        // altura de pagina que nao e a mesma do fatiamento (ver
+                        // alinharQuebras). As quebras sao aplicadas depois do toContainer.
+                        pagebreak:    { mode: [], avoid: [], before: [], after: [] }
                     };
 
-                    html2pdf().set(opt).from(element).toPdf().get('pdf').then(function (pdf) {
+                    html2pdf().set(opt).from(element)
+                        .toContainer()
+                        .then(function () { alinharQuebras(this.prop.container, this.prop.pageSize); })
+                        .toPdf().get('pdf').then(function (pdf) {
                         const totalPages = pdf.internal.getNumberOfPages();
                         
                         for (let i = 1; i <= totalPages; i++) {
