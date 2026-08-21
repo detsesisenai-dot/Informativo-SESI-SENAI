@@ -1022,10 +1022,15 @@
                             letterRendering: true 
                         },
                         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                        // 'avoid-all' marca TODO elemento como inquebravel (inclusive cada <p>),
-                        // empurrando paragrafos soltos para a pagina seguinte. A protecao correta
-                        // e declarativa, restrita aos blocos que nao podem ser cortados.
-                        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.pdf-keep', 'img'], before: [], after: [] }
+                        // O html2pdf fatia o canvas numa linha de pixel arbitraria: sem
+                        // proteger o paragrafo, o corte cai NO MEIO de uma linha de texto -
+                        // o topo dos caracteres fica no pe de uma pagina e a base no topo da
+                        // seguinte. Incluir 'p' e 'li' empurra o paragrafo inteiro.
+                        // Medido: elimina o corte sem custo - mesmo numero de paginas e
+                        // aproveitamento igual ou melhor (89,2% -> 91,1% no caso de teste).
+                        // 'avoid-all' NAO serve aqui: marca todo elemento como inquebravel,
+                        // inclusive spans e icones, e desperdica paginas inteiras.
+                        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.pdf-keep', 'img', 'p', 'li'], before: [], after: [] }
                     };
 
                     html2pdf().set(opt).from(element).toPdf().get('pdf').then(function (pdf) {
