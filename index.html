@@ -65,7 +65,23 @@
            a proteção vai nos blocos atômicos (chapéu+título+meta, imagem), que sempre cabem. */
         .page-break-before { page-break-before: always; }
         .pdf-keep { page-break-inside: avoid; break-inside: avoid; }
+        
+        /* --- Caixa da fotografia ---
+           Todas as fotos ocupam exatamente a mesma caixa, para que todas as materias
+           tenham a mesma diagramacao. 462px = 4:3 da coluna util de 616px no A4, ou
+           seja, a altura de uma foto em paisagem ocupando a largura inteira.
+           object-fit: contain reduz a foto ate ela caber inteira na caixa: retratos
+           encolhem e ficam centralizados, nunca sao recortados - ninguem e cortado
+           da foto. A altura fixa tambem mantem titulo + foto na mesma pagina
+           (180 + 462 + respiro < 941px de pagina util). */
+        .foto-materia { height: 462px; display: flex; align-items: center; justify-content: center; }
+        /* Sem object-fit aqui de proposito: o html2canvas IGNORA object-fit e estica a
+           foto para preencher a caixa (um retrato 9:16 sai com proporcao 1,33 - pessoas
+           achatadas). As dimensoes sao calculadas em ajustarFoto() e aplicadas como
+           width/height explicitos, que o html2canvas respeita. */
         .pdf-mode .avoid-break { page-break-inside: auto; }
+        /* O corpo passou a ser alinhado a esquerda (ver CLASSE_PARAGRAFO no script),
+           o que dispensa hifenizacao e elimina os "rios" do justificado. */
         .pdf-mode .prose p { orphans: 3; widows: 3; }
         
         /* Custom Scrollbar */
@@ -233,17 +249,6 @@
             return clean;
         }
 
-        function formatEditorial(cleanedText) {
-            if(!cleanedText) return "";
-            let sentences = cleanedText.split('. ');
-            if (sentences.length > 1 && sentences[0].length < 150) {
-                sentences[0] = `<strong class="font-sans text-brand-dark text-base leading-relaxed tracking-tight">${sentences[0]}.</strong>`;
-                return sentences.join('. ');
-            } else {
-                return cleanedText;
-            }
-        }
-
         function inferCategory(text) {
             const t = text.toLowerCase();
             if(t.includes('curso') || t.includes('turma') || t.includes('aprendizagem') || t.includes('docente') || t.includes('qualificação') || t.includes('formação')) return 'Educação e Qualificação';
@@ -270,9 +275,18 @@
         function generateTitle(text) {
             let clean = cleanAndImproveText(text);
             const sentenceMatch = clean.match(/^[^.]+/);
-            let title = sentenceMatch ? sentenceMatch[0] : clean;
-            if(title.length > 70) title = title.substring(0, 70) + '...';
-            return title;
+            let title = (sentenceMatch ? sentenceMatch[0] : clean).trim();
+            // Corta em palavra inteira e sem reticencias: o titulo antigo saia como
+            // "No dia 6 de agosto de 2026, a Faculdade SENAI Ro...".
+            if (title.length > 90) {
+                title = title.slice(0, 90);
+                const ultimoEspaco = title.lastIndexOf(' ');
+                if (ultimoEspaco > 40) title = title.slice(0, ultimoEspaco);
+                // Evita fechar o titulo numa preposicao ou artigo solto
+                // ("...realizou a abertura do curso de").
+                title = title.replace(/\s+(?:de|da|do|das|dos|em|no|na|nos|nas|a|o|as|os|e|com|para|por|que|ao|aos)$/i, '');
+            }
+            return title.replace(/[\s,;:\-–—]+$/, '');
         }
 
         function clearAllData() {
@@ -539,6 +553,25 @@
             }
         }
 
+        // --- AJUSTE DAS FOTOGRAFIAS ---
+        // Reduz a foto ate ela caber inteira na caixa (o equivalente a object-fit:
+        // contain, que o html2canvas nao suporta). Nunca recorta e nunca distorce:
+        // retratos encolhem e ficam centralizados na mesma caixa dos paisagens.
+        // Precisa rodar de novo a cada troca de contexto, porque a largura da caixa
+        // muda entre a tela e o modo PDF (coluna de 616px no A4).
+        function ajustarFoto(img) {
+            const caixa = img.closest('.foto-materia');
+            if (!caixa || !img.naturalWidth || !img.naturalHeight) return;
+            const escala = Math.min(caixa.clientWidth / img.naturalWidth,
+                                    caixa.clientHeight / img.naturalHeight);
+            img.style.width  = Math.round(img.naturalWidth  * escala) + 'px';
+            img.style.height = Math.round(img.naturalHeight * escala) + 'px';
+        }
+
+        function ajustarFotos() {
+            document.querySelectorAll('.foto-materia img').forEach(ajustarFoto);
+        }
+
         function renderNewsFeed(data) {
             const feed = document.getElementById('news-feed');
             feed.innerHTML = '';
@@ -564,21 +597,27 @@
                 tempDiv.innerHTML = item.content;
                 let paragraphs = Array.from(tempDiv.querySelectorAll('p')).map(p => p.innerHTML);
                 
-                let editorialBody = '';
-                if(paragraphs.length > 0) {
-                    editorialBody += `<p class="mb-4 text-justify font-serif text-gray-800 text-[15px] leading-relaxed">${formatEditorial(paragraphs[0])}</p>`;
-                    for(let i = 1; i < paragraphs.length; i++) {
-                        editorialBody += `<p class="mb-4 text-justify font-serif text-gray-800 text-[15px] leading-relaxed">${paragraphs[i]}</p>`;
-                    }
-                }
+                // Corpo uniforme: todos os paragrafos com o mesmo tratamento.
+                // - text-left em vez de text-justify: o justificado sem hifenizacao
+                //   abre "rios" de espaco branco entre as palavras.
+                // - 14px/1.5 em vez de 15px/1.625: ~10,5pt no A4, cabe mais texto
+                //   por pagina sem prejuizo de leitura.
+                const CLASSE_PARAGRAFO = 'mb-3 text-left font-serif text-gray-800 text-[14px] leading-[1.5]';
+                let editorialBody = paragraphs
+                    .map(html => `<p class="${CLASSE_PARAGRAFO}">${html}</p>`)
+                    .join('');
 
                 const card = document.createElement('div');
                 card.id = `card-${item.id}`;
                 card.className = 'avoid-break bg-white mb-12 border border-gray-200 rounded-xl overflow-hidden shadow-sm transition-all duration-300';
                 
+                // Foto em largura total, altura livre, sem caixa cinza em volta.
+                // O teto de 700px nao e estetico: e o que garante que titulo (~180px)
+                // + foto + respiro caibam na primeira pagina da materia (util: 941px),
+                // senao a foto volta a ser fatiada entre paginas.
                 let imageHtml = item.image 
-                    ? `<div class="pdf-keep w-full bg-gray-50 flex justify-center py-6 mb-6 rounded-lg">
-                           <img src="${item.image}" class="max-w-full object-contain max-h-[380px] drop-shadow-md rounded">
+                    ? `<div class="pdf-keep foto-materia w-full mb-6">
+                           <img src="${item.image}" onload="ajustarFoto(this)" class="block rounded" alt="">
                        </div>`
                     : '';
 
@@ -646,8 +685,21 @@
             img.onerror = proceedWithPDF; 
             img.src = logoUrl;
 
+            // Cada materia comeca no topo de uma pagina. Aplicado so as materias
+            // efetivamente incluidas (as desmarcadas ficam display:none, e um
+            // page-break nelas geraria paginas em branco). A primeira fica de fora:
+            // ela segue o cabecalho do informe, na pagina 1.
+            function marcarQuebrasPorMateria() {
+                const cards = Array.from(element.querySelectorAll('#news-feed > div'))
+                    .filter(c => !c.classList.contains('exclude-from-pdf'));
+                cards.forEach((c, i) => c.classList.toggle('page-break-before', i > 0));
+            }
+
             function restoreUI() {
                 document.body.classList.remove('pdf-mode');
+                element.querySelectorAll('.page-break-before')
+                       .forEach(c => c.classList.remove('page-break-before'));
+                ajustarFotos();   // a coluna voltou a largura de tela
                 btn.innerHTML = originalText;
             }
 
@@ -661,6 +713,9 @@
                 ];
 
                 Promise.all(assets).then(() => {
+                    marcarQuebrasPorMateria();
+                    ajustarFotos();   // a coluna virou 616px: recalcula o encaixe
+
                     const opt = {
                         margin:       [28, 15, 20, 15], 
                         filename:     `Informe_Executivo_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`,
@@ -670,9 +725,12 @@
                             useCORS: true, 
                             scrollY: 0, 
                             scrollX: 0,
-                            // Largura fixa: nao depender do tamanho da janela do usuario,
-                            // senao o PDF sai diferente em cada monitor.
-                            windowWidth: 1280,
+                            // NAO definir windowWidth aqui. O html2canvas usa esse valor para
+                            // dimensionar a viewport do clone; se ele diferir da janela real, as
+                            // coordenadas do container (que o html2pdf posiciona com position:fixed)
+                            // saem dessincronizadas e o conteudo fica deslocado e cortado na
+                            // horizontal. A composicao ja e deterministica por outro caminho:
+                            // .pdf-mode #executive-dashboard tem width fixo de 680px.
                             backgroundColor: '#FFFFFF',
                             letterRendering: true 
                         },
