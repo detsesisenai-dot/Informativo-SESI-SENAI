@@ -65,6 +65,20 @@
            a proteção vai nos blocos atômicos (chapéu+título+meta, imagem), que sempre cabem. */
         .page-break-before { page-break-before: always; }
         .pdf-keep { page-break-inside: avoid; break-inside: avoid; }
+        
+        /* --- Caixa da fotografia ---
+           Todas as fotos ocupam exatamente a mesma caixa, para que todas as materias
+           tenham a mesma diagramacao. 462px = 4:3 da coluna util de 616px no A4, ou
+           seja, a altura de uma foto em paisagem ocupando a largura inteira.
+           object-fit: contain reduz a foto ate ela caber inteira na caixa: retratos
+           encolhem e ficam centralizados, nunca sao recortados - ninguem e cortado
+           da foto. A altura fixa tambem mantem titulo + foto na mesma pagina
+           (180 + 462 + respiro < 941px de pagina util). */
+        .foto-materia { height: 462px; display: flex; align-items: center; justify-content: center; }
+        /* Sem object-fit aqui de proposito: o html2canvas IGNORA object-fit e estica a
+           foto para preencher a caixa (um retrato 9:16 sai com proporcao 1,33 - pessoas
+           achatadas). As dimensoes sao calculadas em ajustarFoto() e aplicadas como
+           width/height explicitos, que o html2canvas respeita. */
         .pdf-mode .avoid-break { page-break-inside: auto; }
         /* O corpo passou a ser alinhado a esquerda (ver CLASSE_PARAGRAFO no script),
            o que dispensa hifenizacao e elimina os "rios" do justificado. */
@@ -539,6 +553,25 @@
             }
         }
 
+        // --- AJUSTE DAS FOTOGRAFIAS ---
+        // Reduz a foto ate ela caber inteira na caixa (o equivalente a object-fit:
+        // contain, que o html2canvas nao suporta). Nunca recorta e nunca distorce:
+        // retratos encolhem e ficam centralizados na mesma caixa dos paisagens.
+        // Precisa rodar de novo a cada troca de contexto, porque a largura da caixa
+        // muda entre a tela e o modo PDF (coluna de 616px no A4).
+        function ajustarFoto(img) {
+            const caixa = img.closest('.foto-materia');
+            if (!caixa || !img.naturalWidth || !img.naturalHeight) return;
+            const escala = Math.min(caixa.clientWidth / img.naturalWidth,
+                                    caixa.clientHeight / img.naturalHeight);
+            img.style.width  = Math.round(img.naturalWidth  * escala) + 'px';
+            img.style.height = Math.round(img.naturalHeight * escala) + 'px';
+        }
+
+        function ajustarFotos() {
+            document.querySelectorAll('.foto-materia img').forEach(ajustarFoto);
+        }
+
         function renderNewsFeed(data) {
             const feed = document.getElementById('news-feed');
             feed.innerHTML = '';
@@ -583,8 +616,8 @@
                 // + foto + respiro caibam na primeira pagina da materia (util: 941px),
                 // senao a foto volta a ser fatiada entre paginas.
                 let imageHtml = item.image 
-                    ? `<div class="pdf-keep w-full mb-6 text-center">
-                           <img src="${item.image}" class="w-auto max-w-full max-h-[700px] mx-auto block rounded">
+                    ? `<div class="pdf-keep foto-materia w-full mb-6">
+                           <img src="${item.image}" onload="ajustarFoto(this)" class="block rounded" alt="">
                        </div>`
                     : '';
 
@@ -666,6 +699,7 @@
                 document.body.classList.remove('pdf-mode');
                 element.querySelectorAll('.page-break-before')
                        .forEach(c => c.classList.remove('page-break-before'));
+                ajustarFotos();   // a coluna voltou a largura de tela
                 btn.innerHTML = originalText;
             }
 
@@ -680,6 +714,7 @@
 
                 Promise.all(assets).then(() => {
                     marcarQuebrasPorMateria();
+                    ajustarFotos();   // a coluna virou 616px: recalcula o encaixe
 
                     const opt = {
                         margin:       [28, 15, 20, 15], 
