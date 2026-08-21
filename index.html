@@ -106,30 +106,6 @@
         }
         .creditos .sep { color: #C7CFD9; margin: 0 4px; }
 
-        /* --- Sumario --- */
-        #sumario { display: none; }
-        .pdf-mode #sumario { display: block; margin: 0 0 30px; page-break-after: avoid; }
-        #sumario h2 {
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 10px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
-            color: #164194; margin: 0 0 10px; padding-bottom: 7px; border-bottom: 2px solid #008BD2;
-        }
-        #sumario ol { list-style: none; margin: 0; padding: 0; }
-        #sumario li {
-            display: flex; gap: 10px; align-items: baseline;
-            padding: 5px 0; border-bottom: 1px solid #EDF1F5;
-        }
-        #sumario .num {
-            font-family: ui-sans-serif, system-ui, sans-serif; font-size: 9px; font-weight: 800;
-            color: #164194; min-width: 17px;
-        }
-        #sumario .ed {
-            font-family: ui-sans-serif, system-ui, sans-serif; font-size: 8.5px; font-weight: 700;
-            letter-spacing: .1em; text-transform: uppercase; color: #7A8798;
-            min-width: 108px; flex-shrink: 0;
-        }
-        #sumario .tt { font-family: Merriweather, Georgia, serif; font-size: 11px; color: #10243E; line-height: 1.3; }
-
         /* Fio de arremate entre materias: substitui a quebra de pagina obrigatoria,
            que deixava 40-70% de branco no pe de quase toda materia. */
         .pdf-mode .materia + .materia .corpo-materia { border-top: 1px solid #DDE3EA; padding-top: 26px; }
@@ -213,9 +189,6 @@
                 </button>
             </div>
         </div>
-
-        <!-- Sumário: montado na exportação, so aparece no PDF -->
-        <section id="sumario"></section>
 
         <!-- Editorial de Notícias -->
         <div id="news-feed" class="flex flex-col">
@@ -1069,25 +1042,8 @@
             img.onerror = proceedWithPDF; 
             img.src = logoUrl;
 
-            // Informe executivo com varias materias precisa de porta de entrada. Montado
-            // aqui, e nao no render, para refletir exatamente o que foi marcado para o PDF.
-            function montarSumario() {
-                const alvo = document.getElementById('sumario');
-                const cards = Array.from(element.querySelectorAll('#news-feed > div[id^="card-"]'))
-                    .filter(c => !c.classList.contains('exclude-from-pdf'));
-                if (cards.length < 2) { alvo.innerHTML = ''; return; }
-                const itens = cards.map((c, i) => {
-                    const ed = (c.querySelector('.chapeu') || {}).textContent || '';
-                    const tt = (c.querySelector('.titulo-materia') || {}).textContent || '';
-                    return `<li><span class="num">${String(i+1).padStart(2,'0')}</span>` +
-                           `<span class="ed">${ed}</span><span class="tt">${tt}</span></li>`;
-                }).join('');
-                alvo.innerHTML = `<h2>Nesta edição</h2><ol>${itens}</ol>`;
-            }
-
             function restoreUI() {
                 document.body.classList.remove('pdf-mode');
-                document.getElementById('sumario').innerHTML = '';
                 ajustarFotos();   // a coluna voltou a largura de tela
                 btn.innerHTML = originalText;
             }
@@ -1103,7 +1059,6 @@
 
                 Promise.all(assets).then(() => {
                     ajustarFotos();   // a coluna virou 616px: recalcula o encaixe
-                    montarSumario();
 
                     const opt = {
                         margin:       [28, 15, 20, 15], 
