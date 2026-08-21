@@ -1044,6 +1044,13 @@
             // proprios paragrafos, entao um empurrao do bloco ja reposiciona o resto.
             container.querySelectorAll('.pdf-keep, img, p, li').forEach(el => {
                 const r = el.getBoundingClientRect();
+                // Elemento oculto (display:none) tem retangulo zerado. Sem esta guarda,
+                // topo e fundo valem 0 e a conta abaixo compara floor(0/H) = 0 contra
+                // floor(-0,5/H) = -1: o elemento e lido como se cruzasse o limite e
+                // recebe um espacador de UMA PAGINA INTEIRA. Era o que deixava a
+                // primeira pagina so com o cabecalho - o #header-logo fica oculto no
+                // modo PDF - e valeria tambem para cada materia desmarcada no checkbox.
+                if (r.height <= 0 || r.width <= 0) return;
                 const topo = r.top - base, fundo = r.bottom - base;
                 if (fundo - topo > alturaPagina) return;          // nao cabe: nada a fazer
                 if (Math.floor(topo / alturaPagina) === Math.floor((fundo - 0.5) / alturaPagina)) return;
