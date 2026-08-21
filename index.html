@@ -367,7 +367,14 @@
             'CMOC','USF','DHO','UISS','SP','GO','TI','RH','PCD','EPI','SST','CIPA','P&D','B2B']);
 
         // Linhas que apenas marcam secao no documento de origem e nao sao conteudo.
-        const SEPARADOR_DE_SECAO = /^(departamento regional|sistema fieg|unidigital|informa[ccç][oõ]es referenciais.*|diretoria de .+|ger[eê]ncia de .+|confira|fonte|ascom.*)$/i;
+        // Cabecalho do documento consolidado: nao e editoria nem materia.
+        const CABECALHO_DO_DOCUMENTO = /^(informa[cç][oõ]es referenciais|confira|fonte|ascom\b.*)/i;
+
+        // Linhas que nomeiam a editoria. No informe consolidado elas SAO o chapeu
+        // ("DEPARTAMENTO REGIONAL", "SESI SAUDE", "UNIDIGITAL"); nos relatorios de
+        // unidade aparecem como marcador entre materias. O papel e o mesmo: fecham a
+        // materia anterior e nomeiam a proxima. Descarta-las perdia o chapeu.
+        const EDITORIA_POR_EXTENSO = /^(diretoria|ger[eê]ncia|coordena[cç][aã]o|superintend[eê]ncia)\s+d[eoa]\s+.+/i;
 
         // Fecho de relatorio: nao e materia, e o que vem depois tambem nao.
         const FECHO_DO_RELATORIO = /^(conclus[aã]o|considera[cç][oõ]es finais|encerramento)\s*:?\s*$/i;
@@ -390,11 +397,28 @@
 
         function soLetras(t) { return (t || '').replace(/[^A-Za-zÀ-ÿ]/g, ''); }
 
-        // Formato antigo de relatorio: titulo escrito todo em CAIXA ALTA.
+        function ehCaixaAlta(t) {
+            const letras = soLetras(t);
+            if (!letras.length) return false;
+            return letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length / letras.length > 0.85;
+        }
+
+        // Chapeu e titulo chegam os dois em CAIXA ALTA no informe consolidado; o que
+        // os separa e o comprimento. Editoria e nome curto ("SESI SAUDE", "SENAI HUB",
+        // "SESI SENAI APARECIDA DE GOIANIA" = 31); titulo e frase (o mais curto do
+        // informe recebido tem 69 caracteres).
+        const LIMITE_DO_CHAPEU = 42;
+
+        function pareceChapeu(t) {
+            return t.length <= LIMITE_DO_CHAPEU && ehCaixaAlta(t) && soLetras(t).length >= 3;
+        }
+
+        // Titulo em CAIXA ALTA: formato do informe consolidado.
         function pareceTitulo(t) {
             const letras = soLetras(t);
             if (letras.length < 14 || t.length > 170) return false;
-            return letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length / letras.length > 0.85;
+            if (t.length <= LIMITE_DO_CHAPEU) return false;   // e chapeu, nao titulo
+            return ehCaixaAlta(t);
         }
 
         function soData(t) {
@@ -518,6 +542,49 @@
             }
         }
 
+        // --- REDUCAO DAS FOTOS NA IMPORTACAO ---
+        // Os relatorios chegam com fotos direto da camera: o informe oficial recebido
+        // tinha 28 MB, com duas de 6000x3376 (20 MP, 12 MB cada). Sem reduzir na
+        // entrada, o mammoth monta uma string HTML de dezenas de MB com cada foto em
+        // base64 e o navegador trava - medido: mais de tres minutos sem concluir.
+        // A reducao acontece durante a conversao, com createImageBitmap, que
+        // redimensiona no proprio decode.
+        const IMAGEM_MAX_PX = 1200;   // 616px de coluna a 2x, com folga
+
+        async function reduzirImagem(bytes, contentType) {
+            const blob = new Blob([bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)],
+                                  { type: contentType || 'image/jpeg' });
+            let bmp = await createImageBitmap(blob);
+            const maior = Math.max(bmp.width, bmp.height);
+            if (maior > IMAGEM_MAX_PX) {
+                const escala = IMAGEM_MAX_PX / maior;
+                const menor = await createImageBitmap(blob, {
+                    resizeWidth:  Math.round(bmp.width  * escala),
+                    resizeHeight: Math.round(bmp.height * escala),
+                    resizeQuality: 'high'
+                });
+                bmp.close();
+                bmp = menor;
+            }
+            const cv = document.createElement('canvas');
+            cv.width = bmp.width; cv.height = bmp.height;
+            cv.getContext('2d').drawImage(bmp, 0, 0);
+            bmp.close();
+            return cv.toDataURL('image/jpeg', 0.82);
+        }
+
+        const OPCOES_MAMMOTH = {
+            convertImage: mammoth.images.imgElement(function (image) {
+                // image.read() devolve os bytes crus. NAO usar read('base64'): o mammoth
+                // codifica em JS puro e leva 36 s numa foto de 12 MB, contra 3 s aqui -
+                // era o que travava a importacao do informe oficial.
+                return image.read()
+                    .then(bytes => reduzirImagem(bytes, image.contentType))
+                    .then(src => ({ src: src }))
+                    .catch(() => ({ src: '' }));   // foto ilegivel nao derruba a importacao
+            })
+        };
+
         // --- PROCESSAMENTO DO WORD ---
         async function processWordFiles(event) {
             const files = event.target.files;
@@ -528,7 +595,9 @@
 
             for (let i = 0; i < files.length; i++) {
                 const arrayBuffer = await files[i].arrayBuffer();
-                const result = await mammoth.convertToHtml({arrayBuffer: arrayBuffer});
+                document.getElementById('upload-feedback').innerText =
+                    `Lendo ${files[i].name} (${Math.round(files[i].size/1048576)} MB)...`;
+                const result = await mammoth.convertToHtml({arrayBuffer: arrayBuffer}, OPCOES_MAMMOTH);
                 
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = result.value;
@@ -543,6 +612,8 @@
                 const blocos = [];
                 let bloco = null;
                 let chapeuDoDoc = nomeDaUnidade(files[i].name);
+                let chapeuPendente = '';      // editoria lida, aguardando a proxima materia
+                let imagemPendente = null;    // foto que veio antes do texto da materia
                 let anoDoRelatorio = '';
                 let encerrado = false;
 
@@ -553,8 +624,10 @@
                 function abrirBloco(titulo, imagemHerdada) {
                     fecharBloco();
                     bloco = { id: 'rep_' + Date.now() + Math.random().toString(36).substr(2,5),
-                              unit: chapeuDoDoc, title: titulo || '', date: '', type: '',
-                              paragrafos: [], image: imagemHerdada || null, legenda: '' };
+                              unit: chapeuPendente || chapeuDoDoc, title: titulo || '',
+                              date: '', type: '', paragrafos: [],
+                              image: imagemHerdada || imagemPendente || null, legenda: '' };
+                    imagemPendente = null;
                 }
 
                 for (let node of Array.from(tempDiv.childNodes)) {
@@ -573,7 +646,13 @@
                     if (!bruto) continue;
 
                     if (FECHO_DO_RELATORIO.test(bruto)) { fecharBloco(); encerrado = true; continue; }
-                    if (SEPARADOR_DE_SECAO.test(bruto)) { fecharBloco(); continue; }
+                    if (CABECALHO_DO_DOCUMENTO.test(bruto)) { fecharBloco(); continue; }
+
+                    // Editoria por extenso ("Diretoria de Saude e Seguranca do
+                    // Trabalhador"): fecha a materia anterior e nomeia a proxima.
+                    if (EDITORIA_POR_EXTENSO.test(bruto) && bruto.length <= 70) {
+                        fecharBloco(); chapeuPendente = bruto.toUpperCase(); continue;
+                    }
 
                     // Legenda da foto sai do corpo e vira credito da imagem.
                     if (LEGENDA_DE_FOTO.test(bruto)) {
@@ -602,6 +681,17 @@
                         continue;
                     }
 
+                    // Chapeu: linha curta em CAIXA ALTA que nomeia a editoria
+                    // ("SESI SAUDE", "SENAI HUB", "DEPARTAMENTO REGIONAL"). No informe
+                    // consolidado chapeu e titulo chegam os dois em caixa alta; separa-os
+                    // o comprimento (ver LIMITE_DO_CHAPEU). Sem esta regra os chapeus
+                    // curtos caiam no corpo da materia como paragrafo solto.
+                    if (pareceChapeu(bruto)) {
+                        if (bloco && !bloco.paragrafos.length && !bloco.title) bloco.unit = bruto;
+                        else { fecharBloco(); chapeuPendente = bruto; }
+                        continue;
+                    }
+
                     // Titulo: paragrafo inteiramente em negrito, curto, que nao seja lead.
                     // Titulo numerado ("4- Inicio da Segunda Turma") nao depende de
                     // negrito: o Word quebra o paragrafo em varios runs e o mammoth
@@ -611,9 +701,13 @@
                                      || (negrito && bruto.length <= 160 && !ABRE_COM_DATA.test(bruto))
                                      || pareceTitulo(bruto);
                     if (ehTitulo) {
-                        const limpo = caixaDeFrase(bruto.replace(NUMERO_DO_TITULO, '').trim());
-                        if (bloco && !bloco.paragrafos.length) { bloco.title = limpo; bloco.aguardandoTexto = false; }
-                        else abrirBloco(limpo);
+                        // Guarda o titulo CRU. A conversao de CAIXA ALTA para caixa de
+                        // frase depende do dicionario de grafia, que so fica completo
+                        // depois de ler todo o documento; converter aqui produzia
+                        // "SENAI goias amplia..." em vez de "SENAI Goias amplia...".
+                        const cru = bruto.replace(NUMERO_DO_TITULO, '').trim();
+                        if (bloco && !bloco.paragrafos.length) { bloco.title = cru; bloco.aguardandoTexto = false; }
+                        else abrirBloco(cru);
                         continue;
                     }
 
@@ -635,7 +729,8 @@
 
                 blocos.forEach(b => {
                     const corpo = b.paragrafos.join(' ');
-                    b.title = b.title || tituloDoLead(b.paragrafos[0] || '', dicGrafia);
+                    b.title = b.title ? caixaDeFrase(b.title, dicGrafia)
+                                      : tituloDoLead(b.paragrafos[0] || '');
                     if (!b.unit) b.unit = unidadeDe(corpo + ' ' + b.title);
                     b.type = inferCategory(corpo + ' ' + b.title);
                     if (!b.date) b.date = new Date().toISOString().split('T')[0];
@@ -704,14 +799,16 @@
                 img.src = base64Str;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const MAX = 600; 
+                    // 600px ficava abaixo da resolucao de impressao: no PDF a foto ocupa
+                    // 616px de coluna renderizados a 2x, ou seja ~1232px de canvas.
+                    const MAX = 1200; 
                     let w = img.width, h = img.height;
                     if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
                     else { if (h > MAX) { w *= MAX / h; h = MAX; } }
                     canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, w, h);
-                    resolve(canvas.toDataURL('image/jpeg', 0.6)); 
+                    resolve(canvas.toDataURL('image/jpeg', 0.78)); 
                 };
                 img.onerror = () => resolve(null); 
             });
