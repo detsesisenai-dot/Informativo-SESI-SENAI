@@ -670,9 +670,12 @@
                             useCORS: true, 
                             scrollY: 0, 
                             scrollX: 0,
-                            // Largura fixa: nao depender do tamanho da janela do usuario,
-                            // senao o PDF sai diferente em cada monitor.
-                            windowWidth: 1280,
+                            // NAO definir windowWidth aqui. O html2canvas usa esse valor para
+                            // dimensionar a viewport do clone; se ele diferir da janela real, as
+                            // coordenadas do container (que o html2pdf posiciona com position:fixed)
+                            // saem dessincronizadas e o conteudo fica deslocado e cortado na
+                            // horizontal. A composicao ja e deterministica por outro caminho:
+                            // .pdf-mode #executive-dashboard tem width fixo de 680px.
                             backgroundColor: '#FFFFFF',
                             letterRendering: true 
                         },
