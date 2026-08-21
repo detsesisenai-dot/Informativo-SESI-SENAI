@@ -74,16 +74,63 @@
            encolhem e ficam centralizados, nunca sao recortados - ninguem e cortado
            da foto. A altura fixa tambem mantem titulo + foto na mesma pagina
            (180 + 462 + respiro < 941px de pagina util). */
-        .foto-materia { height: 462px; display: flex; align-items: center; justify-content: center; }
-        /* Sem object-fit aqui de proposito: o html2canvas IGNORA object-fit e estica a
-           foto para preencher a caixa (um retrato 9:16 sai com proporcao 1,33 - pessoas
-           achatadas). As dimensoes sao calculadas em ajustarFoto() e aplicadas como
-           width/height explicitos, que o html2canvas respeita. */
-        .pdf-mode .avoid-break { page-break-inside: auto; }
-        /* O corpo passou a ser alinhado a esquerda (ver CLASSE_PARAGRAFO no script),
-           o que dispensa hifenizacao e elimina os "rios" do justificado. */
-        .pdf-mode .prose p { orphans: 3; widows: 3; }
-        
+        /* --- Fotografia ---
+           Largura da coluna quando a proporcao permite; altura limitada a 340px
+           (~90mm no A4). A caixa de altura fixa anterior deixava faixas brancas
+           enormes em fotos panoramicas e comia meia pagina. As dimensoes sao
+           calculadas em ajustarFoto(): o html2canvas IGNORA object-fit e estica a
+           imagem, entao a proporcao precisa virar width/height explicitos. */
+        .foto-materia { margin: 0; text-align: center; }
+        .foto-materia img { margin: 0 auto; }
+
+        /* --- Hierarquia editorial --- */
+        .chapeu {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 9.5px; font-weight: 800; letter-spacing: .18em;
+            text-transform: uppercase; color: #C8102E; margin: 0 0 6px;
+        }
+        .titulo-materia {
+            font-family: Merriweather, Georgia, serif;
+            font-size: 21px; line-height: 1.22; font-weight: 900;
+            color: #10243E; margin: 0 0 7px; letter-spacing: -.01em;
+        }
+        .creditos {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
+            text-transform: uppercase; color: #7A8798; margin: 0 0 14px;
+        }
+        .creditos .sep { color: #C7CFD9; margin: 0 4px; }
+
+        /* --- Sumario --- */
+        #sumario { display: none; }
+        .pdf-mode #sumario { display: block; margin: 0 0 30px; page-break-after: avoid; }
+        #sumario h2 {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 10px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
+            color: #003A70; margin: 0 0 10px; padding-bottom: 7px; border-bottom: 2px solid #003A70;
+        }
+        #sumario ol { list-style: none; margin: 0; padding: 0; }
+        #sumario li {
+            display: flex; gap: 10px; align-items: baseline;
+            padding: 5px 0; border-bottom: 1px solid #EDF1F5;
+        }
+        #sumario .num {
+            font-family: ui-sans-serif, system-ui, sans-serif; font-size: 9px; font-weight: 800;
+            color: #C8102E; min-width: 17px;
+        }
+        #sumario .ed {
+            font-family: ui-sans-serif, system-ui, sans-serif; font-size: 8.5px; font-weight: 700;
+            letter-spacing: .1em; text-transform: uppercase; color: #7A8798;
+            min-width: 108px; flex-shrink: 0;
+        }
+        #sumario .tt { font-family: Merriweather, Georgia, serif; font-size: 11px; color: #10243E; line-height: 1.3; }
+
+        /* Fio de arremate entre materias: substitui a quebra de pagina obrigatoria,
+           que deixava 40-70% de branco no pe de quase toda materia. */
+        .pdf-mode .materia + .materia .corpo-materia { border-top: 1px solid #DDE3EA; padding-top: 26px; }
+        .pdf-mode .materia { margin-bottom: 0; }
+        .pdf-mode .corpo-materia { padding: 0 0 26px; }
+
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
@@ -161,6 +208,9 @@
                 </button>
             </div>
         </div>
+
+        <!-- Sumário: montado na exportação, so aparece no PDF -->
+        <section id="sumario"></section>
 
         <!-- Editorial de Notícias -->
         <div id="news-feed" class="flex flex-col">
@@ -249,13 +299,39 @@
             return clean;
         }
 
+        // Chapeu de ultimo recurso, quando o documento nao trouxe a linha de unidade.
+        function unidadeDe(texto) {
+            const t = (texto || '').toUpperCase();
+            if (t.includes('FATEC')) return 'FATEC';
+            if (t.includes('SENAI') && t.includes('SESI')) return 'SESI SENAI';
+            if (t.includes('SENAI')) return 'SENAI';
+            if (t.includes('SESI'))  return 'SESI';
+            if (t.includes('IEL'))   return 'IEL';
+            return 'SISTEMA FIEG';
+        }
+
+        // Classificacao por contagem de termos, nao pela primeira regra que bater.
+        // A versao anterior usava includes('ia'), que casava com "emergencia", "dias",
+        // "importantes" - e mandava materia de saude para Industria 4.0.
+        const EIXOS = [
+            ['Saúde e Segurança',        ['saúde','segurança','sipat','vacinação','ergonomia','brigada','psicossocial','acidente','ocupacional','epi','cipa','NR-?\d+']],
+            ['Indústria 4.0 e Inovação', ['robótica','tecnologia','tecnológic\w*','inovação','automação','digitalização','hackathon','startup','laboratório','indústria 4\.0','inteligência artificial']],
+            ['Relações Institucionais',  ['visita','reunião','parceria','prefeitura','associação','sindicato','acordo','comitiva','institucional','convênio','câmara']],
+            ['Educação e Qualificação',  ['curso','turma','aprendizagem','docente','qualificação','formação','capacitação','aluno\w*','estudante\w*','matrícula','aperfeiçoamento','escolarização']]
+        ];
+
         function inferCategory(text) {
-            const t = text.toLowerCase();
-            if(t.includes('curso') || t.includes('turma') || t.includes('aprendizagem') || t.includes('docente') || t.includes('qualificação') || t.includes('formação')) return 'Educação e Qualificação';
-            if(t.includes('saúde') || t.includes('segurança') || t.includes('sipat') || t.includes('vacinação') || t.includes('nr') || t.includes('ergonomia')) return 'Saúde e Segurança';
-            if(t.includes('robótica') || t.includes('tecnologia') || t.includes('inovação') || t.includes('automação') || t.includes('ia') || t.includes('laboratório')) return 'Indústria 4.0 e Inovação';
-            if(t.includes('visita') || t.includes('reunião') || t.includes('parceria') || t.includes('prefeitura') || t.includes('associação')) return 'Relações Institucionais';
-            return 'Educação e Qualificação'; 
+            const t = (text || '').toLowerCase();
+            let melhor = 'Educação e Qualificação', maior = 0;
+            EIXOS.forEach(([eixo, termos]) => {
+                let n = 0;
+                termos.forEach(termo => {
+                    const re = new RegExp('(?:^|[^a-zà-ÿ])' + termo + '(?![a-zà-ÿ])', 'gi');
+                    n += (t.match(re) || []).length;
+                });
+                if (n > maior) { maior = n; melhor = eixo; }
+            });
+            return melhor;
         }
 
         function extractDate(text) {
@@ -272,18 +348,107 @@
             return '';
         }
 
-        function generateTitle(text) {
-            let clean = cleanAndImproveText(text);
-            const sentenceMatch = clean.match(/^[^.]+/);
-            let title = (sentenceMatch ? sentenceMatch[0] : clean).trim();
-            // Corta em palavra inteira e sem reticencias: o titulo antigo saia como
-            // "No dia 6 de agosto de 2026, a Faculdade SENAI Ro...".
-            if (title.length > 90) {
-                title = title.slice(0, 90);
+        // --- ANALISE EDITORIAL DO TEXTO IMPORTADO ---
+
+        // Siglas que devem sobreviver a conversao de CAIXA ALTA para caixa de frase.
+        const SIGLAS = new Set(['SESI','SENAI','IEL','FIEG','FATEC','CNI','IST','EAD','EJA',
+            'MSEP','OVG','JA','COE','CIC','BIM','IA','SIGEGO','CDTI','NR','SIPAT','A&B','MP',
+            'CMOC','USF','DHO','UISS','SP','GO','TI','RH','PCD','EPI','SST','CIPA','P&D','B2B']);
+
+        // Linhas que apenas marcam secao no documento de origem e nao sao conteudo.
+        const SEPARADOR_DE_SECAO = /^(departamento regional|sistema fieg|unidigital|informa[cç][oõ]es referenciais.*|diretoria de .+|ger[eê]ncia de .+|confira|fonte|ascom.*)$/i;
+
+        function soLetras(t) { return (t || '').replace(/[^A-Za-zÀ-ÿ]/g, ''); }
+
+        // Heuristica de titulo: linha predominantemente em caixa alta e com corpo de frase.
+        function pareceTitulo(t) {
+            const letras = soLetras(t);
+            if (letras.length < 14 || t.length > 170) return false;
+            const maiusculas = letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length;
+            return maiusculas / letras.length > 0.85;
+        }
+
+        // Chapeu: linha curta em caixa alta que nomeia a unidade ou a editoria.
+        function pareceChapeu(t) {
+            const letras = soLetras(t);
+            if (!letras.length || t.length > 42) return false;
+            const maiusculas = letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length;
+            return maiusculas / letras.length > 0.85;
+        }
+
+        function soData(t) {
+            return /^\s*\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}\s*$/.test(t || '') ||
+                   /^\s*\d{1,2}\s+de\s+[a-zA-ZçÇ]+(\s+de\s+\d{4})?\s*$/i.test(t || '');
+        }
+
+        function dataISO(t) {
+            const barra = (t || '').match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+            if (barra) {
+                const ano = barra[3].length === 2 ? '20' + barra[3] : barra[3];
+                return ano + '-' + barra[2].padStart(2,'0') + '-' + barra[1].padStart(2,'0');
+            }
+            return extractDate(t || '');
+        }
+
+        // Aprende a grafia dos nomes proprios com o proprio documento: no corpo eles
+        // aparecem em caixa normal ("SENAI Goias", "Goiania", "Seduc", "Anglo American").
+        // Ignora a primeira palavra de cada frase, que esta maiuscula so por posicao.
+        function dicionarioDeGrafia(paragrafos) {
+            const alta = new Map(), baixa = new Set();
+            (paragrafos || []).forEach(par => {
+                String(par).split(/(?<=[.!?:;])\s+/).forEach(frase => {
+                    const toks = frase.match(/[A-Za-zÀ-ÿ0-9&]+/g) || [];
+                    // Pula a primeira palavra: esta maiuscula so por posicao.
+                    toks.slice(1).forEach(tok => {
+                        if (tok.length < 2) return;
+                        const k = tok.toLowerCase();
+                        if (/^[A-ZÀ-Þ]/.test(tok)) { if (!alta.has(k)) alta.set(k, tok); }
+                        else baixa.add(k);
+                    });
+                });
+            });
+            // So e nome proprio a palavra que NUNCA aparece em minuscula no corpo.
+            // Sem isso o dicionario aprende "industria", "construcao", "desenvolvimento"
+            // de dentro de nomes compostos ("Camara da Industria da Construcao") e sai
+            // capitalizando substantivo comum no titulo.
+            baixa.forEach(k => alta.delete(k));
+            return alta;
+        }
+
+        // CAIXA ALTA vira caixa de frase. Siglas ficam de pe; nomes proprios recuperam a
+        // grafia observada no corpo. Titulo em versalete gritado nao e padrao editorial
+        // brasileiro - manchete se escreve em caixa de frase.
+        function caixaDeFrase(texto, dic) {
+            if (!texto) return '';
+            const letras = soLetras(texto);
+            if (!letras.length) return texto.trim();
+            if (letras.replace(/[^A-ZÀ-ÞÇ]/g,'').length / letras.length < 0.85) return texto.trim();
+
+            const convertido = texto.trim().split(/(\s+)/).map(w => {
+                if (!/[A-Za-zÀ-ÿ]/.test(w)) return w;
+                const nucleo = w.replace(/^[^A-Za-zÀ-ÿ0-9&]+|[^A-Za-zÀ-ÿ0-9&]+$/g, '');
+                const prefixo = w.slice(0, w.indexOf(nucleo));
+                const sufixo  = w.slice(w.indexOf(nucleo) + nucleo.length);
+                const alto = nucleo.toUpperCase();
+                if (SIGLAS.has(alto)) return prefixo + alto + sufixo;
+                const achado = dic && dic.get(nucleo.toLowerCase());
+                if (achado) return prefixo + achado + sufixo;
+                return prefixo + nucleo.toLowerCase() + sufixo;
+            }).join('');
+            return convertido.charAt(0).toUpperCase() + convertido.slice(1);
+        }
+
+        // Fallback: so usado quando a materia nao trouxe uma linha de titulo.
+        function generateTitle(html) {
+            const div = document.createElement('div');
+            div.innerHTML = html || '';
+            let clean = cleanAndImproveText(div.textContent || '');
+            const frase = clean.match(/^[^.]+/);
+            let title = (frase ? frase[0] : clean).trim();
+            if (title.length > 95) {
+                title = title.slice(0, 95);
                 const ultimoEspaco = title.lastIndexOf(' ');
                 if (ultimoEspaco > 40) title = title.slice(0, ultimoEspaco);
-                // Evita fechar o titulo numa preposicao ou artigo solto
-                // ("...realizou a abertura do curso de").
                 title = title.replace(/\s+(?:de|da|do|das|dos|em|no|na|nos|nas|a|o|as|os|e|com|para|por|que|ao|aos)$/i, '');
             }
             return title.replace(/[\s,;:\-–—]+$/, '');
@@ -312,59 +477,93 @@
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = result.value;
                 
-                let currentAction = null;
-                const nodes = Array.from(tempDiv.childNodes);
+                // --- SEGMENTACAO DAS MATERIAS ---
+                // O documento de origem vem como: [chapeu] TITULO EM CAIXA ALTA / data /
+                // paragrafos / imagem, repetido, com marcadores de secao entre os blocos.
+                // A regra antiga ("linha < 80 chars contendo SESI/SENAI") juntava materias
+                // distintas num card so e promovia titulos a chapeu.
+                const blocos = [];
+                let bloco = null;
+                let chapeuPendente = '';
+                let imagemPendente = null;
 
-                for (let node of nodes) {
-                    let rawText = node.textContent;
-                    let textUpper = rawText.toUpperCase();
-                    
-                    let isUnitHeader = rawText.length > 0 && rawText.length < 80 && 
-                        (textUpper.includes('SESI') || textUpper.includes('SENAI') || textUpper.includes('FATEC'));
+                function novoBloco(titulo) {
+                    return { id: 'rep_' + Date.now() + Math.random().toString(36).substr(2,5),
+                             unit: chapeuPendente, title: titulo, date: '', type: '',
+                             paragrafos: [], image: imagemPendente };
+                }
 
-                    if (isUnitHeader && node.tagName !== 'IMG' && !node.querySelector('img')) {
-                        if (currentAction && currentAction.content.length > 10) {
-                            if(!currentAction.title) currentAction.title = generateTitle(currentAction.content);
-                            if(!currentAction.type) currentAction.type = inferCategory(currentAction.content);
-                            if(!currentAction.date) currentAction.date = new Date().toISOString().split('T')[0];
-                            parsedReportsCache.push(currentAction);
-                        }
-                        
-                        currentAction = {
-                            id: 'rep_' + Date.now() + Math.random().toString(36).substr(2, 5),
-                            unit: rawText.replace(/\*/g, '').trim(),
-                            title: '',
-                            date: '',
-                            type: '',
-                            content: '',
-                            image: null 
-                        };
-                    } else if (currentAction) {
-                        if (!currentAction.date && rawText.length > 5) {
-                            let extracted = extractDate(rawText);
-                            if(extracted) currentAction.date = extracted;
-                        }
-
-                        if (rawText.trim().length > 0) {
-                            let cleanText = cleanAndImproveText(rawText);
-                            if(cleanText.length > 0) {
-                                currentAction.content += `<p class="mb-4">${cleanText}</p>`;
-                            }
-                        }
-
-                        if (!currentAction.image) {
-                            const img = node.tagName === 'IMG' ? node : node.querySelector('img');
-                            if (img && img.src) currentAction.image = img.src;
-                        }
+                function fecharBloco() {
+                    if (!bloco) return;
+                    if (bloco.paragrafos.length === 0) {
+                        // Bloco sem corpo: era so a repeticao do titulo/chapeu que o documento
+                        // coloca antes e depois da foto. Descarta, mas leva a imagem adiante.
+                        if (bloco.image) imagemPendente = bloco.image;
+                        if (bloco.unit) chapeuPendente = bloco.unit;
+                        bloco = null;
+                        return;
                     }
+                    blocos.push(bloco);
+                    bloco = null;
+                    imagemPendente = null;
                 }
 
-                if (currentAction && currentAction.content.length > 10) {
-                    if(!currentAction.title) currentAction.title = generateTitle(currentAction.content);
-                    if(!currentAction.type) currentAction.type = inferCategory(currentAction.content);
-                    if(!currentAction.date) currentAction.date = new Date().toISOString().split('T')[0];
-                    parsedReportsCache.push(currentAction);
+                for (let node of Array.from(tempDiv.childNodes)) {
+                    const bruto = (node.textContent || '').replace(/\*/g,'').replace(/\s{2,}/g,' ').trim();
+                    const img = node.tagName === 'IMG' ? node : (node.querySelector ? node.querySelector('img') : null);
+
+                    if (img && img.src) {
+                        if (bloco && !bloco.image) bloco.image = img.src;
+                        else if (!bloco) imagemPendente = img.src;
+                    }
+                    if (!bruto) continue;
+
+                    if (SEPARADOR_DE_SECAO.test(bruto)) { fecharBloco(); chapeuPendente = ''; continue; }
+
+                    if (soData(bruto)) {
+                        const d = dataISO(bruto);
+                        if (bloco && !bloco.date) bloco.date = d;
+                        continue;                       // data nao entra no corpo
+                    }
+
+                    if (pareceTitulo(bruto)) {
+                        // Guarda cru: a conversao para caixa de frase depende do dicionario
+                        // de grafia, que so fica completo depois de ler todo o documento.
+                        if (bloco && bloco.paragrafos.length === 0) {
+                            if (bruto.length > (bloco.title||'').length) bloco.title = bruto;
+                            continue;                 // repeticao do titulo em volta da foto
+                        }
+                        fecharBloco();
+                        bloco = novoBloco(bruto);
+                        continue;
+                    }
+
+                    if (pareceChapeu(bruto)) {
+                        if (bloco && bloco.paragrafos.length === 0) { bloco.unit = bruto; }
+                        else { fecharBloco(); chapeuPendente = bruto; }
+                        continue;
+                    }
+
+                    if (!bloco) bloco = novoBloco('');
+                    if (!bloco.date) { const d = extractDate(bruto); if (d) bloco.date = d; }
+                    const limpo = cleanAndImproveText(bruto);
+                    if (limpo) bloco.paragrafos.push(limpo);
                 }
+                fecharBloco();
+
+                const dicGrafia = dicionarioDeGrafia(
+                    blocos.reduce((acc, b) => acc.concat(b.paragrafos), []));
+
+                blocos.forEach(b => {
+                    const corpo = b.paragrafos.join(' ');
+                    b.title = b.title ? caixaDeFrase(b.title, dicGrafia) : generateTitle(corpo);
+                    if (!b.unit)  b.unit  = unidadeDe(corpo + ' ' + b.title);
+                    b.type = inferCategory(corpo + ' ' + b.title);
+                    if (!b.date) b.date = new Date().toISOString().split('T')[0];
+                    b.content = b.paragrafos.map(t => '<p>' + t + '</p>').join('');
+                    delete b.paragrafos;
+                    parsedReportsCache.push(b);
+                });
             }
 
             renderReviewCards();
@@ -559,11 +758,13 @@
         // retratos encolhem e ficam centralizados na mesma caixa dos paisagens.
         // Precisa rodar de novo a cada troca de contexto, porque a largura da caixa
         // muda entre a tela e o modo PDF (coluna de 616px no A4).
+        const FOTO_ALTURA_MAX = 340;   // ~90mm no A4
+
         function ajustarFoto(img) {
             const caixa = img.closest('.foto-materia');
             if (!caixa || !img.naturalWidth || !img.naturalHeight) return;
             const escala = Math.min(caixa.clientWidth / img.naturalWidth,
-                                    caixa.clientHeight / img.naturalHeight);
+                                    FOTO_ALTURA_MAX / img.naturalHeight);
             img.style.width  = Math.round(img.naturalWidth  * escala) + 'px';
             img.style.height = Math.round(img.naturalHeight * escala) + 'px';
         }
@@ -602,23 +803,24 @@
                 //   abre "rios" de espaco branco entre as palavras.
                 // - 14px/1.5 em vez de 15px/1.625: ~10,5pt no A4, cabe mais texto
                 //   por pagina sem prejuizo de leitura.
-                const CLASSE_PARAGRAFO = 'mb-3 text-left font-serif text-gray-800 text-[14px] leading-[1.5]';
-                let editorialBody = paragraphs
-                    .map(html => `<p class="${CLASSE_PARAGRAFO}">${html}</p>`)
-                    .join('');
+                // Lead: primeiro paragrafo com peso maior, como em jornal impresso.
+                const P_CORPO = 'mb-[10px] text-left font-serif text-gray-800 text-[13.5px] leading-[1.55]';
+                const P_LEAD  = 'mb-3 text-left font-serif text-gray-900 text-[15px] leading-[1.5]';
+                const leadHtml  = paragraphs.length ? `<p class="${P_LEAD}">${paragraphs[0]}</p>` : '';
+                const corpoHtml = paragraphs.slice(1)
+                    .map(html => `<p class="${P_CORPO}">${html}</p>`).join('');
 
                 const card = document.createElement('div');
                 card.id = `card-${item.id}`;
-                card.className = 'avoid-break bg-white mb-12 border border-gray-200 rounded-xl overflow-hidden shadow-sm transition-all duration-300';
-                
-                // Foto em largura total, altura livre, sem caixa cinza em volta.
-                // O teto de 700px nao e estetico: e o que garante que titulo (~180px)
-                // + foto + respiro caibam na primeira pagina da materia (util: 941px),
-                // senao a foto volta a ser fatiada entre paginas.
+                card.className = 'avoid-break materia bg-white mb-12 border border-gray-200 rounded-xl overflow-hidden shadow-sm transition-all duration-300';
+
+                // Foto: largura da coluna quando a proporcao permite, altura limitada.
+                // A caixa de altura fixa anterior deixava faixas brancas enormes em fotos
+                // panoramicas e desperdicava meia pagina.
                 let imageHtml = item.image 
-                    ? `<div class="pdf-keep foto-materia w-full mb-6">
-                           <img src="${item.image}" onload="ajustarFoto(this)" class="block rounded" alt="">
-                       </div>`
+                    ? `<figure class="foto-materia w-full mb-5">
+                           <img src="${item.image}" class="block" alt="">
+                       </figure>`
                     : '';
 
                 card.innerHTML = `
@@ -635,28 +837,34 @@
                     </div>
 
                     <!-- Corpo da Matéria -->
-                    <div class="p-8 pt-6">
-                        <!-- Chapeu + titulo + creditos: bloco atomico, nunca cortado entre paginas -->
-                        <div class="pdf-keep">
-                            <div class="mb-3">
-                                <span class="text-brand-red font-black text-xs tracking-[0.2em] uppercase border-b-2 border-brand-red pb-1 inline-block">${item.unit}</span>
-                            </div>
-                            
-                            <h3 class="text-3xl font-black text-brand-dark mb-4 leading-tight font-serif">${item.title}</h3>
-                            
-                            <div class="flex items-center gap-6 mb-4 text-xs font-bold text-brand-gray uppercase tracking-wider">
-                                <span class="flex items-center gap-1.5"><i class="ph-fill ph-calendar-blank text-brand-blue text-base"></i> ${formattedDate}</span>
-                                <span class="flex items-center gap-1.5"><i class="ph-fill ph-tag text-brand-blue text-base"></i> ${item.type}</span>
-                            </div>
+                    <div class="p-8 pt-6 corpo-materia">
+                        <!-- Abertura da materia: chapeu, titulo, creditos, foto e lead formam
+                             UM bloco indivisivel. Titulo sozinho no pe da pagina, com a foto e o
+                             texto na pagina seguinte, e o erro de diagramacao mais visivel num
+                             informe - e era o que acontecia quando so o cabecalho era protegido.
+                             O conjunto mede ~530px no pior caso, bem abaixo dos 941px da pagina,
+                             entao o html2pdf sempre consegue empurra-lo inteiro. -->
+                        <div class="pdf-keep abertura-materia">
+                            <p class="chapeu">${item.unit}</p>
+                            <h3 class="titulo-materia">${item.title}</h3>
+                            <p class="creditos">${formattedDate} <span class="sep">•</span> ${item.type}</p>
+                            ${imageHtml}
+                            <div class="prose max-w-none">${leadHtml}</div>
                         </div>
                         
-                        ${imageHtml}
-                        
                         <div class="prose max-w-none">
-                            ${editorialBody}
+                            ${corpoHtml}
                         </div>
                     </div>
                 `;
+                // Listener em JS, nao no atributo: o html2canvas clona o DOM para dentro
+                // de um iframe sem scripts, e um onload inline dispara la e quebra.
+                const foto = card.querySelector('.foto-materia img');
+                if (foto) {
+                    if (foto.complete && foto.naturalWidth) ajustarFoto(foto);
+                    else foto.addEventListener('load', () => ajustarFoto(foto), { once: true });
+                }
+
                 feed.appendChild(card);
             });
         }
@@ -685,20 +893,25 @@
             img.onerror = proceedWithPDF; 
             img.src = logoUrl;
 
-            // Cada materia comeca no topo de uma pagina. Aplicado so as materias
-            // efetivamente incluidas (as desmarcadas ficam display:none, e um
-            // page-break nelas geraria paginas em branco). A primeira fica de fora:
-            // ela segue o cabecalho do informe, na pagina 1.
-            function marcarQuebrasPorMateria() {
-                const cards = Array.from(element.querySelectorAll('#news-feed > div'))
+            // Informe executivo com varias materias precisa de porta de entrada. Montado
+            // aqui, e nao no render, para refletir exatamente o que foi marcado para o PDF.
+            function montarSumario() {
+                const alvo = document.getElementById('sumario');
+                const cards = Array.from(element.querySelectorAll('#news-feed > div[id^="card-"]'))
                     .filter(c => !c.classList.contains('exclude-from-pdf'));
-                cards.forEach((c, i) => c.classList.toggle('page-break-before', i > 0));
+                if (cards.length < 2) { alvo.innerHTML = ''; return; }
+                const itens = cards.map((c, i) => {
+                    const ed = (c.querySelector('.chapeu') || {}).textContent || '';
+                    const tt = (c.querySelector('.titulo-materia') || {}).textContent || '';
+                    return `<li><span class="num">${String(i+1).padStart(2,'0')}</span>` +
+                           `<span class="ed">${ed}</span><span class="tt">${tt}</span></li>`;
+                }).join('');
+                alvo.innerHTML = `<h2>Nesta edição</h2><ol>${itens}</ol>`;
             }
 
             function restoreUI() {
                 document.body.classList.remove('pdf-mode');
-                element.querySelectorAll('.page-break-before')
-                       .forEach(c => c.classList.remove('page-break-before'));
+                document.getElementById('sumario').innerHTML = '';
                 ajustarFotos();   // a coluna voltou a largura de tela
                 btn.innerHTML = originalText;
             }
@@ -713,8 +926,8 @@
                 ];
 
                 Promise.all(assets).then(() => {
-                    marcarQuebrasPorMateria();
                     ajustarFotos();   // a coluna virou 616px: recalcula o encaixe
+                    montarSumario();
 
                     const opt = {
                         margin:       [28, 15, 20, 15], 
