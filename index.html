@@ -334,13 +334,19 @@
             return melhor;
         }
 
-        function extractDate(text) {
+        function extractDate(text, anoRef) {
+            const barra = (text || '').match(/(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})/);
+            if (barra) {
+                const a = barra[3].length === 2 ? '20' + barra[3] : barra[3];
+                return a + '-' + barra[2].padStart(2,'0') + '-' + barra[1].padStart(2,'0');
+            }
             const regex = /(\d{1,2})(?:\s*e\s*\d{1,2})?\s+de\s+([a-zA-ZçÇ]+)(?:\s+de\s+(\d{4}))?/;
-            const match = text.match(regex);
+            const match = (text || '').match(regex);
             if (match) {
                 const day = match[1].padStart(2, '0');
                 const monthStr = match[2].toLowerCase();
-                const year = match[3] || new Date().getFullYear();
+                // "No dia 11 de junho" nao traz ano: usa o do periodo do relatorio.
+                const year = match[3] || anoRef || new Date().getFullYear();
                 const months = {janeiro:'01', fevereiro:'02', março:'03', marco:'03', abril:'04', maio:'05', junho:'06', julho:'07', agosto:'08', setembro:'09', outubro:'10', novembro:'11', dezembro:'12'};
                 const month = months[monthStr] || '01';
                 return `${year}-${month}-${day}`;
@@ -356,24 +362,34 @@
             'CMOC','USF','DHO','UISS','SP','GO','TI','RH','PCD','EPI','SST','CIPA','P&D','B2B']);
 
         // Linhas que apenas marcam secao no documento de origem e nao sao conteudo.
-        const SEPARADOR_DE_SECAO = /^(departamento regional|sistema fieg|unidigital|informa[cç][oõ]es referenciais.*|diretoria de .+|ger[eê]ncia de .+|confira|fonte|ascom.*)$/i;
+        const SEPARADOR_DE_SECAO = /^(departamento regional|sistema fieg|unidigital|informa[ccç][oõ]es referenciais.*|diretoria de .+|ger[eê]ncia de .+|confira|fonte|ascom.*)$/i;
+
+        // Fecho de relatorio: nao e materia, e o que vem depois tambem nao.
+        const FECHO_DO_RELATORIO = /^(conclus[aã]o|considera[cç][oõ]es finais|encerramento)\s*:?\s*$/i;
+
+        // Legenda de foto: "Imagem 3 - Reuniao de Alinhamento".
+        const LEGENDA_DE_FOTO = /^(imagem|foto|figura)\s*\d+\s*[-–—:.]?\s*/i;
+
+        // Abertura de materia por data. E o unico marcador presente em TODOS os
+        // formatos de relatorio recebidos - ha unidades que numeram e destacam o
+        // titulo em negrito, outras que nao poem titulo nenhum e emendam as materias
+        // uma na outra, separadas so por esta formula.
+        const ABRE_COM_DATA = /^(?:n[oa]s?\s+dias?\s|n[oa]\s+(?:manh[aã]|tarde|noite)\s+d[eo]\s|n[oa]\s+[uú]ltim[oa]\s|em\s+\d{1,2}\s+de\s|entre\s+os\s+dias\s|no\s+per[ií]odo\s)/i;
+
+        // Numeracao que a unidade poe no titulo: "2- Aula Inaugural", "5 - Reuniao".
+        const NUMERO_DO_TITULO = /^\d{1,2}\s*[-–—.)]\s*/;
+
+        // Cabecalho do documento: nome da unidade e linha de periodo do relatorio.
+        const NOME_DE_UNIDADE = /(sesi|senai|iel|fatec|escola|unidade|faculdade|instituto)/i;
+        const LINHA_DE_PERIODO = /^relat[oó]rio\b/i;
 
         function soLetras(t) { return (t || '').replace(/[^A-Za-zÀ-ÿ]/g, ''); }
 
-        // Heuristica de titulo: linha predominantemente em caixa alta e com corpo de frase.
+        // Formato antigo de relatorio: titulo escrito todo em CAIXA ALTA.
         function pareceTitulo(t) {
             const letras = soLetras(t);
             if (letras.length < 14 || t.length > 170) return false;
-            const maiusculas = letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length;
-            return maiusculas / letras.length > 0.85;
-        }
-
-        // Chapeu: linha curta em caixa alta que nomeia a unidade ou a editoria.
-        function pareceChapeu(t) {
-            const letras = soLetras(t);
-            if (!letras.length || t.length > 42) return false;
-            const maiusculas = letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length;
-            return maiusculas / letras.length > 0.85;
+            return letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length / letras.length > 0.85;
         }
 
         function soData(t) {
@@ -381,24 +397,41 @@
                    /^\s*\d{1,2}\s+de\s+[a-zA-ZçÇ]+(\s+de\s+\d{4})?\s*$/i.test(t || '');
         }
 
-        function dataISO(t) {
+        function dataISO(t, anoRef) {
             const barra = (t || '').match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
             if (barra) {
                 const ano = barra[3].length === 2 ? '20' + barra[3] : barra[3];
                 return ano + '-' + barra[2].padStart(2,'0') + '-' + barra[1].padStart(2,'0');
             }
-            return extractDate(t || '');
+            return extractDate(t || '', anoRef);
         }
 
+        // Nome da unidade a partir do arquivo: os relatorios chegam nomeados por
+        // unidade ("MINACU - Relatorio SENAI...") e as vezes esse e o unico lugar
+        // onde a unidade aparece - GOIANESIA nao tem cabecalho no documento.
+        function nomeDaUnidade(nomeArquivo) {
+            const base = (nomeArquivo || '').replace(/\.docx?$/i, '');
+            const corte = base.split(/\s+[-–—]\s+/)[0].trim();
+            if (!corte || corte.length > 40) return '';
+            return corte.toUpperCase();
+        }
+
+        function limparNomeDeUnidade(t) {
+            return (t || '').replace(/^(unidade integrada|unidade|escola|faculdade)\s+/i, '')
+                            .replace(/\s{2,}/g, ' ').trim().toUpperCase();
+        }
+
+        // Sem titulo no documento, o titulo sai do lead: remove o preambulo temporal
+        // ("No dia 11 de junho, ") e devolve o restante como manchete. Nao inventa
+        // texto - so descarta a marcacao de tempo, que ja aparece nos creditos.
         // Aprende a grafia dos nomes proprios com o proprio documento: no corpo eles
-        // aparecem em caixa normal ("SENAI Goias", "Goiania", "Seduc", "Anglo American").
+        // aparecem em caixa normal ("SENAI Goias", "Niquelandia", "Anglo American").
         // Ignora a primeira palavra de cada frase, que esta maiuscula so por posicao.
         function dicionarioDeGrafia(paragrafos) {
             const alta = new Map(), baixa = new Set();
             (paragrafos || []).forEach(par => {
                 String(par).split(/(?<=[.!?:;])\s+/).forEach(frase => {
                     const toks = frase.match(/[A-Za-zÀ-ÿ0-9&]+/g) || [];
-                    // Pula a primeira palavra: esta maiuscula so por posicao.
                     toks.slice(1).forEach(tok => {
                         if (tok.length < 2) return;
                         const k = tok.toLowerCase();
@@ -407,28 +440,27 @@
                     });
                 });
             });
-            // So e nome proprio a palavra que NUNCA aparece em minuscula no corpo.
-            // Sem isso o dicionario aprende "industria", "construcao", "desenvolvimento"
-            // de dentro de nomes compostos ("Camara da Industria da Construcao") e sai
-            // capitalizando substantivo comum no titulo.
+            // So e nome proprio a palavra que NUNCA aparece em minuscula no corpo. Sem
+            // isso o dicionario aprende "industria" e "construcao" de dentro de nomes
+            // compostos ("Camara da Industria da Construcao") e capitaliza substantivo
+            // comum no titulo.
             baixa.forEach(k => alta.delete(k));
             return alta;
         }
 
-        // CAIXA ALTA vira caixa de frase. Siglas ficam de pe; nomes proprios recuperam a
-        // grafia observada no corpo. Titulo em versalete gritado nao e padrao editorial
-        // brasileiro - manchete se escreve em caixa de frase.
+        // CAIXA ALTA vira caixa de frase; manchete em versalete gritado nao e padrao
+        // editorial brasileiro. Siglas ficam de pe e nomes proprios recuperam a grafia.
         function caixaDeFrase(texto, dic) {
             if (!texto) return '';
             const letras = soLetras(texto);
             if (!letras.length) return texto.trim();
-            if (letras.replace(/[^A-ZÀ-ÞÇ]/g,'').length / letras.length < 0.85) return texto.trim();
+            if (letras.replace(/[^A-ZÀ-ÞÇ]/g, '').length / letras.length < 0.85) return texto.trim();
 
             const convertido = texto.trim().split(/(\s+)/).map(w => {
                 if (!/[A-Za-zÀ-ÿ]/.test(w)) return w;
                 const nucleo = w.replace(/^[^A-Za-zÀ-ÿ0-9&]+|[^A-Za-zÀ-ÿ0-9&]+$/g, '');
-                const prefixo = w.slice(0, w.indexOf(nucleo));
-                const sufixo  = w.slice(w.indexOf(nucleo) + nucleo.length);
+                const corte = w.indexOf(nucleo);
+                const prefixo = w.slice(0, corte), sufixo = w.slice(corte + nucleo.length);
                 const alto = nucleo.toUpperCase();
                 if (SIGLAS.has(alto)) return prefixo + alto + sufixo;
                 const achado = dic && dic.get(nucleo.toLowerCase());
@@ -438,20 +470,39 @@
             return convertido.charAt(0).toUpperCase() + convertido.slice(1);
         }
 
-        // Fallback: so usado quando a materia nao trouxe uma linha de titulo.
+        // Ultimo recurso, quando a materia nao trouxe titulo nem lead aproveitavel.
         function generateTitle(html) {
             const div = document.createElement('div');
             div.innerHTML = html || '';
-            let clean = cleanAndImproveText(div.textContent || '');
+            const clean = cleanAndImproveText(div.textContent || '');
             const frase = clean.match(/^[^.]+/);
-            let title = (frase ? frase[0] : clean).trim();
-            if (title.length > 95) {
-                title = title.slice(0, 95);
-                const ultimoEspaco = title.lastIndexOf(' ');
-                if (ultimoEspaco > 40) title = title.slice(0, ultimoEspaco);
-                title = title.replace(/\s+(?:de|da|do|das|dos|em|no|na|nos|nas|a|o|as|os|e|com|para|por|que|ao|aos)$/i, '');
+            let t = (frase ? frase[0] : clean).trim();
+            if (t.length > 95) {
+                t = t.slice(0, 95);
+                const esp = t.lastIndexOf(' ');
+                if (esp > 40) t = t.slice(0, esp);
             }
-            return title.replace(/[\s,;:\-–—]+$/, '');
+            return t.replace(/[\s,;:\-–—]+$/, '');
+        }
+
+        function tituloDoLead(lead) {
+            let t = (lead || '').trim();
+            // "No dia 22 de junho de 2026, teve inicio a segunda turma..." ->
+            // "Teve inicio a segunda turma...". A marcacao de tempo ja aparece nos
+            // creditos da materia; repeti-la na manchete e ruido.
+            if (ABRE_COM_DATA.test(t)) {
+                const virgula = t.indexOf(',');
+                if (virgula > 0 && virgula < 80) t = t.slice(virgula + 1).trim();
+            }
+            if (!t) t = (lead || '').trim();
+            if (t.length > 95) {
+                t = t.slice(0, 95);
+                const esp = t.lastIndexOf(' ');
+                if (esp > 40) t = t.slice(0, esp);
+                t = t.replace(/\s+(?:de|da|do|das|dos|em|no|na|nos|nas|a|o|as|os|e|com|para|por|que|ao|aos)$/i, '');
+            }
+            t = t.replace(/[\s,;:\-–—]+$/, '');
+            return t.charAt(0).toUpperCase() + t.slice(1);
         }
 
         function clearAllData() {
@@ -478,76 +529,99 @@
                 tempDiv.innerHTML = result.value;
                 
                 // --- SEGMENTACAO DAS MATERIAS ---
-                // O documento de origem vem como: [chapeu] TITULO EM CAIXA ALTA / data /
-                // paragrafos / imagem, repetido, com marcadores de secao entre os blocos.
-                // A regra antiga ("linha < 80 chars contendo SESI/SENAI") juntava materias
-                // distintas num card so e promovia titulos a chapeu.
+                // Os relatorios chegam em formatos diferentes conforme a unidade:
+                //   MINACU    titulo em negrito e numerado, depois texto, foto e legenda
+                //   ITUMBIARA quase sem titulo: foto e depois "Na manha de 19 de junho..."
+                //   GOIANESIA nenhum titulo: so "No dia 11 de junho, ..." e foto
+                // O unico marcador comum aos tres e a abertura por data. Titulo em
+                // negrito, quando existe, tem prioridade sobre ele.
                 const blocos = [];
                 let bloco = null;
-                let chapeuPendente = '';
-                let imagemPendente = null;
-
-                function novoBloco(titulo) {
-                    return { id: 'rep_' + Date.now() + Math.random().toString(36).substr(2,5),
-                             unit: chapeuPendente, title: titulo, date: '', type: '',
-                             paragrafos: [], image: imagemPendente };
-                }
+                let chapeuDoDoc = nomeDaUnidade(files[i].name);
+                let anoDoRelatorio = '';
+                let encerrado = false;
 
                 function fecharBloco() {
-                    if (!bloco) return;
-                    if (bloco.paragrafos.length === 0) {
-                        // Bloco sem corpo: era so a repeticao do titulo/chapeu que o documento
-                        // coloca antes e depois da foto. Descarta, mas leva a imagem adiante.
-                        if (bloco.image) imagemPendente = bloco.image;
-                        if (bloco.unit) chapeuPendente = bloco.unit;
-                        bloco = null;
-                        return;
-                    }
-                    blocos.push(bloco);
+                    if (bloco && bloco.paragrafos.length) blocos.push(bloco);
                     bloco = null;
-                    imagemPendente = null;
+                }
+                function abrirBloco(titulo, imagemHerdada) {
+                    fecharBloco();
+                    bloco = { id: 'rep_' + Date.now() + Math.random().toString(36).substr(2,5),
+                              unit: chapeuDoDoc, title: titulo || '', date: '', type: '',
+                              paragrafos: [], image: imagemHerdada || null, legenda: '' };
                 }
 
                 for (let node of Array.from(tempDiv.childNodes)) {
+                    if (encerrado) break;
                     const bruto = (node.textContent || '').replace(/\*/g,'').replace(/\s{2,}/g,' ').trim();
                     const img = node.tagName === 'IMG' ? node : (node.querySelector ? node.querySelector('img') : null);
+                    const negrito = !!(node.querySelector && node.querySelector('strong')) &&
+                                    (node.textContent || '').trim() === (node.querySelector('strong').textContent || '').trim();
 
+                    // A foto pertence a materia corrente; se ainda nao ha materia, fica
+                    // guardada para a proxima (ITUMBIARA poe a foto ANTES do texto).
                     if (img && img.src) {
                         if (bloco && !bloco.image) bloco.image = img.src;
-                        else if (!bloco) imagemPendente = img.src;
+                        else if (!bloco) { abrirBloco(''); bloco.image = img.src; bloco.aguardandoTexto = true; }
                     }
                     if (!bruto) continue;
 
-                    if (SEPARADOR_DE_SECAO.test(bruto)) { fecharBloco(); chapeuPendente = ''; continue; }
+                    if (FECHO_DO_RELATORIO.test(bruto)) { fecharBloco(); encerrado = true; continue; }
+                    if (SEPARADOR_DE_SECAO.test(bruto)) { fecharBloco(); continue; }
+
+                    // Legenda da foto sai do corpo e vira credito da imagem.
+                    if (LEGENDA_DE_FOTO.test(bruto)) {
+                        if (bloco && !bloco.legenda) bloco.legenda = bruto.replace(LEGENDA_DE_FOTO, '').trim();
+                        continue;
+                    }
+
+                    // Cabecalho do documento: so antes da primeira materia.
+                    if (!blocos.length && (!bloco || !bloco.paragrafos.length)) {
+                        if (LINHA_DE_PERIODO.test(bruto)) {
+                            const a = bruto.match(/(20\d{2})/);
+                            if (a) anoDoRelatorio = a[1];
+                            continue;
+                        }
+                        if (negrito && NOME_DE_UNIDADE.test(bruto) && bruto.length < 70 &&
+                            !ABRE_COM_DATA.test(bruto)) {
+                            chapeuDoDoc = limparNomeDeUnidade(bruto);
+                            if (bloco) bloco.unit = chapeuDoDoc;
+                            continue;
+                        }
+                    }
 
                     if (soData(bruto)) {
-                        const d = dataISO(bruto);
+                        const d = dataISO(bruto, anoDoRelatorio);
                         if (bloco && !bloco.date) bloco.date = d;
-                        continue;                       // data nao entra no corpo
-                    }
-
-                    if (pareceTitulo(bruto)) {
-                        // Guarda cru: a conversao para caixa de frase depende do dicionario
-                        // de grafia, que so fica completo depois de ler todo o documento.
-                        if (bloco && bloco.paragrafos.length === 0) {
-                            if (bruto.length > (bloco.title||'').length) bloco.title = bruto;
-                            continue;                 // repeticao do titulo em volta da foto
-                        }
-                        fecharBloco();
-                        bloco = novoBloco(bruto);
                         continue;
                     }
 
-                    if (pareceChapeu(bruto)) {
-                        if (bloco && bloco.paragrafos.length === 0) { bloco.unit = bruto; }
-                        else { fecharBloco(); chapeuPendente = bruto; }
+                    // Titulo: paragrafo inteiramente em negrito, curto, que nao seja lead.
+                    // Titulo numerado ("4- Inicio da Segunda Turma") nao depende de
+                    // negrito: o Word quebra o paragrafo em varios runs e o mammoth
+                    // so marca <strong> quando TODOS eles sao negrito.
+                    const numerado = NUMERO_DO_TITULO.test(bruto) && bruto.length <= 160;
+                    const ehTitulo = numerado
+                                     || (negrito && bruto.length <= 160 && !ABRE_COM_DATA.test(bruto))
+                                     || pareceTitulo(bruto);
+                    if (ehTitulo) {
+                        const limpo = caixaDeFrase(bruto.replace(NUMERO_DO_TITULO, '').trim());
+                        if (bloco && !bloco.paragrafos.length) { bloco.title = limpo; bloco.aguardandoTexto = false; }
+                        else abrirBloco(limpo);
                         continue;
                     }
 
-                    if (!bloco) bloco = novoBloco('');
-                    if (!bloco.date) { const d = extractDate(bruto); if (d) bloco.date = d; }
-                    const limpo = cleanAndImproveText(bruto);
-                    if (limpo) bloco.paragrafos.push(limpo);
+                    // Abertura por data: comeca materia nova se a atual ja tem corpo.
+                    if (ABRE_COM_DATA.test(bruto) && bloco && bloco.paragrafos.length) {
+                        abrirBloco('');
+                    }
+                    if (!bloco) abrirBloco('');
+                    bloco.aguardandoTexto = false;
+
+                    if (!bloco.date) { const d = extractDate(bruto, anoDoRelatorio); if (d) bloco.date = d; }
+                    const limpoTxt = cleanAndImproveText(bruto);
+                    if (limpoTxt) bloco.paragrafos.push(limpoTxt);
                 }
                 fecharBloco();
 
@@ -556,12 +630,12 @@
 
                 blocos.forEach(b => {
                     const corpo = b.paragrafos.join(' ');
-                    b.title = b.title ? caixaDeFrase(b.title, dicGrafia) : generateTitle(corpo);
-                    if (!b.unit)  b.unit  = unidadeDe(corpo + ' ' + b.title);
+                    b.title = b.title || tituloDoLead(b.paragrafos[0] || '', dicGrafia);
+                    if (!b.unit) b.unit = unidadeDe(corpo + ' ' + b.title);
                     b.type = inferCategory(corpo + ' ' + b.title);
                     if (!b.date) b.date = new Date().toISOString().split('T')[0];
                     b.content = b.paragrafos.map(t => '<p>' + t + '</p>').join('');
-                    delete b.paragrafos;
+                    delete b.paragrafos; delete b.aguardandoTexto;
                     parsedReportsCache.push(b);
                 });
             }
