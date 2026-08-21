@@ -110,7 +110,11 @@
            que deixava 40-70% de branco no pe de quase toda materia. */
         .pdf-mode .materia + .materia .corpo-materia { border-top: 1px solid #DDE3EA; padding-top: 26px; }
         .pdf-mode .materia { margin-bottom: 0; }
-        .pdf-mode .corpo-materia { padding: 0 0 26px; }
+        /* Recuo lateral: sem ele a coluna ocupa os 180mm inteiros da area de tipo e
+           o texto encosta na borda, o que se le como texto cortado. Com 32px de cada
+           lado a coluna fica em 616px (163mm), com 8,5mm de respiro de cada lado, e a
+           linha cai de ~110 para ~88 caracteres - dentro do aceitavel para leitura. */
+        .pdf-mode .corpo-materia { padding: 0 32px 26px; }
 
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
@@ -954,11 +958,12 @@
                 // - 14px/1.5 em vez de 15px/1.625: ~10,5pt no A4, cabe mais texto
                 //   por pagina sem prejuizo de leitura.
                 // Lead: primeiro paragrafo com peso maior, como em jornal impresso.
-                const P_CORPO = 'mb-[10px] text-left font-serif text-gray-800 text-[13.5px] leading-[1.55]';
-                const P_LEAD  = 'mb-3 text-left font-serif text-gray-900 text-[15px] leading-[1.5]';
-                const leadHtml  = paragraphs.length ? `<p class="${P_LEAD}">${paragraphs[0]}</p>` : '';
+                // Corpo uniforme: mesmo tamanho e mesma entrelinha em todos os paragrafos.
+                // O lead era 15px contra 13,5px do resto, e a diferenca aparecia no PDF.
+                const P_TEXTO = 'mb-3 text-left font-serif text-gray-800 text-[13.5px] leading-[1.55]';
+                const leadHtml  = paragraphs.length ? `<p class="${P_TEXTO}">${paragraphs[0]}</p>` : '';
                 const corpoHtml = paragraphs.slice(1)
-                    .map(html => `<p class="${P_CORPO}">${html}</p>`).join('');
+                    .map(html => `<p class="${P_TEXTO}">${html}</p>`).join('');
 
                 const card = document.createElement('div');
                 card.id = `card-${item.id}`;
