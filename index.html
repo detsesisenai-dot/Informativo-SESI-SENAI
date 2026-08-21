@@ -21,9 +21,14 @@
                         serif: ['Merriweather', 'serif'] 
                     },
                     colors: {
+                        // Manual de Marcas do Sistema FIEG, v1.0/2024, pag. 8:
+                        // azul escuro #164194 (C100/M80/Y0/K0) e detalhe em azul claro
+                        // #008BD2 (C100/M20/Y0/K0). O #003A70 anterior nao constava do
+                        // manual e destoava da propria marca no cabecalho.
                         brand: {
-                            blue: '#003A70', 
-                            red: '#E31937',  
+                            blue: '#164194',
+                            azulClaro: '#008BD2',
+                            red: '#E31937',
                             light: '#F4F6F9', 
                             dark: '#2B2D42',
                             gray: '#8D99AE'
@@ -87,12 +92,12 @@
         .chapeu {
             font-family: ui-sans-serif, system-ui, sans-serif;
             font-size: 9.5px; font-weight: 800; letter-spacing: .18em;
-            text-transform: uppercase; color: #C8102E; margin: 0 0 6px;
+            text-transform: uppercase; color: #164194; margin: 0 0 6px;
         }
         .titulo-materia {
             font-family: Merriweather, Georgia, serif;
             font-size: 21px; line-height: 1.22; font-weight: 900;
-            color: #10243E; margin: 0 0 7px; letter-spacing: -.01em;
+            color: #16233D; margin: 0 0 7px; letter-spacing: -.01em;
         }
         .creditos {
             font-family: ui-sans-serif, system-ui, sans-serif;
@@ -107,7 +112,7 @@
         #sumario h2 {
             font-family: ui-sans-serif, system-ui, sans-serif;
             font-size: 10px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
-            color: #003A70; margin: 0 0 10px; padding-bottom: 7px; border-bottom: 2px solid #003A70;
+            color: #164194; margin: 0 0 10px; padding-bottom: 7px; border-bottom: 2px solid #008BD2;
         }
         #sumario ol { list-style: none; margin: 0; padding: 0; }
         #sumario li {
@@ -116,7 +121,7 @@
         }
         #sumario .num {
             font-family: ui-sans-serif, system-ui, sans-serif; font-size: 9px; font-weight: 800;
-            color: #C8102E; min-width: 17px;
+            color: #164194; min-width: 17px;
         }
         #sumario .ed {
             font-family: ui-sans-serif, system-ui, sans-serif; font-size: 8.5px; font-weight: 700;
@@ -153,7 +158,7 @@
                 </div>
                 <p class="text-brand-gray font-bold text-lg">
                     Sistema FIEG | <span id="current-date-display" class="text-brand-dark"></span> 
-                    <span id="active-filters-display" class="text-brand-red ml-1"></span>
+                    <span id="active-filters-display" class="text-brand-blue ml-1"></span>
                 </p>
             </div>
             
@@ -1049,7 +1054,8 @@
                                 pdf.addImage(logoBase64, 'PNG', b.right - w, b.top, w, h);
                             }
 
-                            pdf.setDrawColor(0, 58, 112); 
+                            pdf.setDrawColor(22, 65, 148);   // #164194, azul do Sistema FIEG
+                            
                             pdf.setLineWidth(0.3);
                             pdf.line(15, 24, 195, 24);
 
